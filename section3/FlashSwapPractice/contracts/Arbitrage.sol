@@ -8,10 +8,19 @@ import { IUniswapV2Callee } from "v2-core/interfaces/IUniswapV2Callee.sol";
 
 // This is a practice contract for flash swap arbitrage
 contract Arbitrage is IUniswapV2Callee, Ownable {
-
     //
     // EXTERNAL NON-VIEW ONLY OWNER
     //
+    struct CallbackData {
+        address repayToken; // USDC
+        address borrowToken; // ETH
+        uint256 repayAmount;
+        uint256 borrowAmount;
+        address priceHigherPool; // Sushi pool
+        address priceLowerPool; // Uniswap pool
+    }
+
+    event DebugLog(string message);
 
     function withdraw() external onlyOwner {
         (bool success, ) = msg.sender.call{ value: address(this).balance }("");
@@ -28,6 +37,24 @@ contract Arbitrage is IUniswapV2Callee, Ownable {
 
     function uniswapV2Call(address sender, uint256 amount0, uint256 amount1, bytes calldata data) external override {
         // TODO
+        // requirements
+        require(sender == address(this), "Sender must be this contract");
+        require(amount0 > 0 || amount1 > 0, "amount0 or amount1 must be greater than 0");
+        // 1.decode callback data into CallbackData Struct and approve borrowAmount ETH to higher price pool
+        CallbackData memory callbackData = abi.decode(data, (CallbackData));
+        IERC20(callbackData.borrowToken).approve(callbackData.priceHigherPool, callbackData.borrowAmount);
+        // 2.swap borrowAmount ETH and get USDC amountOut
+        // 下方已有getAmountOut實作
+        (uint256 reserveETH, uint256 reserveUSDC, ) = IUniswapV2Pair(callbackData.priceHigherPool).getReserves();
+        emit DebugLog("After get reserves");
+        uint256 usdcAmountOut = _getAmountOut(callbackData.borrowAmount, reserveETH, reserveUSDC);
+        emit DebugLog("After get usdcAmountOut");
+        IERC20(callbackData.borrowToken).transfer(callbackData.priceHigherPool, callbackData.borrowAmount);
+        IUniswapV2Pair(callbackData.priceHigherPool).swap(0, usdcAmountOut, address(this), ""); // callbackData is empty
+        emit DebugLog("After Sushi pool swap");
+        // 3.repay USDC to lower price pool
+        IERC20(callbackData.repayToken).transfer(callbackData.priceLowerPool, callbackData.repayAmount);
+        emit DebugLog("After Uniswap pool repay");
     }
 
     // Method 1 is
@@ -41,6 +68,40 @@ contract Arbitrage is IUniswapV2Callee, Ownable {
     // for testing convenient, we implement the method 1 here
     function arbitrage(address priceLowerPool, address priceHigherPool, uint256 borrowETH) external {
         // TODO
+        // 1.get pair
+        address token0 = IUniswapV2Pair(priceLowerPool).token0();
+        address token1 = IUniswapV2Pair(priceLowerPool).token1();
+        address[] memory path = new address[](2);
+        path[0] = token0;
+        path[1] = token1;
+        emit DebugLog("before get reserves");
+        (uint112 reserveETH, uint112 reserveUSDC, ) = IUniswapV2Pair(priceLowerPool).getReserves();
+        emit DebugLog("After get reserves");
+        // getReserves result:
+        // 00000000000000000000000000000000000000000000000002b5e3af16b1880000 == 5 ETH
+        // 0000000000000000000000000000000000000000000000000000000000ee6b2800 == 4000 USDC
+        // 000000000000000000000000000000000000000000000000000000000000000001
+
+        // 2.calculate repay amount, and set callback data
+        // repayAmount is from lower price pool
+        // 自己對pool getAmountsIn，不透過router
+        // uint256[] memory amountsIn = IUniswapV2Router01
+        // getAmountsIn在UniswapV2Library
+        // 已在下方有實作_getAmountIn
+        // token0 is WETH, token1 is USDC
+        uint256 repayAmount = _getAmountIn(borrowETH, reserveUSDC, reserveETH);
+        emit DebugLog("After get repayAmount");
+        CallbackData memory callbackData = CallbackData(
+            token1, // repayToken is ETH
+            token0, // borrowToken is USDC
+            repayAmount, // is calcaulated by _getAmountIn
+            borrowETH, // is input parameter == 5 ETH
+            priceHigherPool, // is Sushi pool
+            priceLowerPool // is Uniswap pool
+        );
+        // 3.borrow WETH from lower price pool
+        // we will go into uniswapV2Call with swap function
+        IUniswapV2Pair(priceLowerPool).swap(borrowETH, 0, address(this), abi.encode(callbackData));
     }
 
     //
