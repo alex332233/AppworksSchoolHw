@@ -1,7 +1,11 @@
 [profile.default]
-src = "src"
+src = "contracts"
 out = "out"
-libs = ["lib"]
+libs = ["node_modules","lib"]
 fs_permissions = [{ access = "read", path = "./"}]
+cache_path  = 'cache_forge'
+
+[profile.contracts]
+path = "contracts"
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
