@@ -111,6 +111,7 @@ contract FlashLoanHWTest is Test {
 
         AaveFlashLoan flashLoan = new AaveFlashLoan();
         flashLoan.flashLoan(address(usdc), liquidateAmount, params);
+        flashLoan.withdraw(address(usdc));
 
         assertGe(usdc.balanceOf(user2), 5063 * 10 ** 6);
         vm.stopPrank();

@@ -32,9 +32,12 @@ contract AaveFlashLoan {
         require(initiator == address(this), "only this contract can call");
         require(premium <= amount, "premium too high");
 
-        CErc20Delegator cUSDC = abi.decode(params, (CErc20Delegator));
-        CErc20Delegator cUNI = abi.decode(params, (CErc20Delegator));
-        address user1 = abi.decode(params, (address));
+        // CErc20Delegator cUSDC = abi.decode(params, (CErc20Delegator));
+        // CErc20Delegator cUNI = abi.decode(params, (CErc20Delegator));
+        // address user1 = abi.decode(params, (address));
+
+        (CErc20Delegator cUSDC, CErc20Delegator cUNI, address user1) = abi
+            .decode(params, (CErc20Delegator, CErc20Delegator, address));
 
         ERC20(asset).approve(address(cUSDC), amount);
         cUSDC.liquidateBorrow(user1, amount, cUNI);
@@ -56,11 +59,13 @@ contract AaveFlashLoan {
 
         ERC20(asset).approve(address(pool), amount + premium);
 
-        ERC20(asset).transfer(
-            msg.sender,
-            ERC20(asset).balanceOf(address(this))
-        );
-
         return true;
+    }
+
+    function withdraw(address token) external {
+        ERC20(token).transfer(
+            msg.sender,
+            ERC20(token).balanceOf(address(this))
+        );
     }
 }
